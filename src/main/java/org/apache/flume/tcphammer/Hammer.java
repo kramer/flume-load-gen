@@ -29,6 +29,7 @@ import java.util.concurrent.TimeUnit;
 import org.joda.time.DateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class Hammer {
 
@@ -92,13 +93,23 @@ public class Hammer {
     //String base = "<13>" + DateTime.now() + " " + localhost + " " + tag + " ";
     //ByteBuffer bbStart = ByteBuffer.wrap(base.getBytes(Charsets.US_ASCII));
 
-    long eventCount = 0;
+    final AtomicLong eventCount = new AtomicLong(0L);
     int eventsThisSec = 0;
+
+    Runtime.getRuntime().addShutdownHook(new Thread()
+    {
+      @Override
+      public void run()
+      {
+        logger.info("Total events at shutdown = {}", eventCount.get());
+      }
+    });
+
     while (true) {
       String base = "<13>" + DateTime.now() + " " + localhost + " " + tag + " ";
       ByteBuffer bbStart = ByteBuffer.wrap(base.getBytes(Charsets.US_ASCII));
       bbMsg.put(bbStart);
-      bbMsg.put(Long.toString(eventCount).getBytes(Charsets.US_ASCII));
+      bbMsg.put(eventCount.toString().getBytes(Charsets.US_ASCII));
       bbMsg.put(bbEnd);
       try {
         out.write(backingArray, 0, eventSize);
@@ -111,7 +122,7 @@ public class Hammer {
           sock = new Socket(addr, port);
           out = new BufferedOutputStream(sock.getOutputStream());
         } catch (IOException e2) {
-          logger.error("Socket reconnect problem. Events: " + eventCount, e2);
+          logger.error("Socket reconnect problem. Events: " + eventCount.get(), e2);
           System.exit(1);
         }
       }
@@ -120,12 +131,12 @@ public class Hammer {
       bbEnd.flip();
       bbMsg.clear();
 
-      eventCount++;
+      long count = eventCount.incrementAndGet();
       eventsThisSec++;
       curLogIntervalEventsSent++;
 
       // only check every N# events
-      if (eventCount % 200L == 0) {
+      if (count % 200L == 0) {
         long curLogTime = System.nanoTime();
 
         // log on 1-minute intervals
@@ -139,7 +150,7 @@ public class Hammer {
                 String.format("%.2f", (100 * (double) curLogIntervalNanosSlept / (double) logDelta)),
                 curLogIntervalEventsSent,
                 String.format("%.2f", (double) curLogIntervalEventsSent / ((double) logDelta / 1000000000D)),
-                eventCount,
+                count,
               });
           lastLogTime = curLogTime;
           curLogIntervalNanosSlept = 0;
