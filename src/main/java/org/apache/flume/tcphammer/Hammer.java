@@ -32,6 +32,7 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class Hammer {
+  private static OutputStream out;
 
   private static final Logger logger = LoggerFactory.getLogger(Hammer.class);
 
@@ -62,7 +63,6 @@ public class Hammer {
     int logIntervalSecs = Integer.parseInt(args[5]);
 
     Socket sock;
-    OutputStream out;
 
     try {
       logger.info("Connecting to {}:{}...", host, port);
@@ -90,8 +90,8 @@ public class Hammer {
     long lastSleepTime = System.nanoTime();
 
     // send the same date over and over; too slow to generate it
-    //String base = "<13>" + DateTime.now() + " " + localhost + " " + tag + " ";
-    //ByteBuffer bbStart = ByteBuffer.wrap(base.getBytes(Charsets.US_ASCII));
+    // String base = "<13>" + DateTime.now() + " " + localhost + " " + tag + " ";
+    // ByteBuffer bbStart = ByteBuffer.wrap(base.getBytes(Charsets.US_ASCII));
 
     final AtomicLong eventCount = new AtomicLong(0L);
     int eventsThisSec = 0;
@@ -101,15 +101,21 @@ public class Hammer {
       @Override
       public void run()
       {
+        try{
+          out.flush();
+          out.close();
+        }catch(IOException e){}
         logger.info("Total events at shutdown = {}", eventCount.get());
       }
     });
 
     while (true) {
+      long count = eventCount.incrementAndGet();
+
       String base = "<13>" + DateTime.now() + " " + localhost + " " + tag + " ";
       ByteBuffer bbStart = ByteBuffer.wrap(base.getBytes(Charsets.US_ASCII));
       bbMsg.put(bbStart);
-      bbMsg.put(eventCount.toString().getBytes(Charsets.US_ASCII));
+      bbMsg.put(Long.toString(count).getBytes(Charsets.US_ASCII));
       bbMsg.put(bbEnd);
       try {
         out.write(backingArray, 0, eventSize);
@@ -122,7 +128,7 @@ public class Hammer {
           sock = new Socket(addr, port);
           out = new BufferedOutputStream(sock.getOutputStream());
         } catch (IOException e2) {
-          logger.error("Socket reconnect problem. Events: " + eventCount.get(), e2);
+          logger.error("Socket reconnect problem. Events: " + Long.toString(count), e2);
           System.exit(1);
         }
       }
@@ -131,7 +137,6 @@ public class Hammer {
       bbEnd.flip();
       bbMsg.clear();
 
-      long count = eventCount.incrementAndGet();
       eventsThisSec++;
       curLogIntervalEventsSent++;
 
